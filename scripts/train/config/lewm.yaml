@@ -5,6 +5,8 @@ defaults:
 
 output_model_name: lewm
 subdir: ${hydra:job.id}
+resume_ckpt_path: null
+resume_weights_only: false
 
 num_workers: 6
 train_split: 0.9

@@ -107,11 +107,13 @@ def _resolve_dataset(name: str, datasets_dir: Path) -> Path:
     layout a registered format can detect.
     """
     local = Path(name)
-    if not local.is_absolute():
-        local = datasets_dir / local
-
     if local.exists():
         return local
+
+    if not local.is_absolute():
+        local = datasets_dir / local
+        if local.exists():
+            return local
 
     # HuggingFace repo: <user>/<repo>
     if '/' in name and not name.startswith(('.', '/')):

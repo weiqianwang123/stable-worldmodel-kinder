@@ -35,6 +35,7 @@ class FolderDataset(Dataset):
         num_steps: int = 1,
         transform: Callable[[dict], dict] | None = None,
         keys_to_load: list[str] | None = None,
+        keys_to_cache: list[str] | None = None,
         folder_keys: list[str] | None = None,
         cache_dir: str | Path | None = None,
         path: str | Path | None = None,
@@ -67,7 +68,11 @@ class FolderDataset(Dataset):
             )
         self._keys = keys_to_load
 
-        for key in self._keys:
+        cache_keys = set(self._keys)
+        if keys_to_cache is not None:
+            cache_keys.update(keys_to_cache)
+
+        for key in sorted(cache_keys):
             if key not in self.folder_keys:
                 npz = self.path / f'{key}.npz'
                 if npz.exists():
@@ -121,6 +126,10 @@ class FolderDataset(Dataset):
                 f"'{col}' not in cache (folder keys cannot be retrieved as full array)"
             )
         return self._cache[col]
+
+    def get_dim(self, col: str) -> int:
+        data = self.get_col_data(col)
+        return np.prod(data.shape[1:]).item() if data.ndim > 1 else 1
 
     def get_row_data(self, row_idx: int | list[int]) -> dict:
         return {

@@ -201,12 +201,20 @@ def run(cfg):
         enable_checkpointing=True,
     )
 
-    ckpt_path = run_dir / f'{cfg.output_model_name}_weights.ckpt'
+    resume_ckpt_path = cfg.get('resume_ckpt_path')
+    if resume_ckpt_path:
+        ckpt_path = Path(resume_ckpt_path).expanduser().resolve()
+        weights_only = bool(cfg.get('resume_weights_only', False))
+    else:
+        ckpt_path = run_dir / f'{cfg.output_model_name}_weights.ckpt'
+        weights_only = True
+
     manager = spt.Manager(
         trainer=trainer,
         module=world_model,
         data=data_module,
-        ckpt_path=ckpt_path if ckpt_path.exists() else None,
+        ckpt_path=str(ckpt_path) if ckpt_path.exists() else None,
+        weights_only=weights_only,
     )
 
     manager()

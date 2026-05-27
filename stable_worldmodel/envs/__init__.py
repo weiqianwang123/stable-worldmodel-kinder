@@ -121,6 +121,18 @@ register(
     entry_point='stable_worldmodel.envs.piecewise.piecewise_env:PiecewiseEnv',
 )
 
+register(
+    id='swm/KinderMotion2D-v0',
+    entry_point='stable_worldmodel.envs.kinder.motion2d:KinderMotion2D',
+)
+
+for _num_passages in range(6):
+    register(
+        id=f'swm/KinderMotion2D-p{_num_passages}-v0',
+        entry_point='stable_worldmodel.envs.kinder.motion2d:KinderMotion2D',
+        kwargs={'num_passages': _num_passages},
+    )
+
 _GYM_CONTROL = 'stable_worldmodel.envs.gymnasium_control'
 register(
     id='swm/CartPoleControl-v1',
