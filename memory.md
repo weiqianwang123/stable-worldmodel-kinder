@@ -1,6 +1,6 @@
 # stable-worldmodel 代码理解 Memory
 
-最后更新：2026-05-26
+最后更新：2026-05-27
 
 ## 维护规则
 
@@ -29,6 +29,7 @@
 - `scripts/`：数据采集、训练、评估、可视化、benchmark 脚本。训练脚本大多用 Hydra 配置。
 - `scripts/data/collect_kinder_motion2d.py`：KinDER Motion2D 的数据脚本，支持单 seed、多 seed batch 或 `--num-episodes/--start-seed` 连续 seed；默认用 2D grid A* 避开障碍物，streaming 写出可被训练脚本读取的 `dataset_folder/`，并可用 `--artifact-limit` 控制只为前 N 条保存 `episode.npz`、`episode.gif`、`trajectory.png`。Folder writer 每条 episode 后会刷新 `ep_len/ep_offset/*.npz`，避免中断后只留下 pixels 的半成品目录。
 - `scripts/data/collect_kinder_motion2d_500.sh`：收集 500 条 KinDER Motion2D episode 的便捷脚本，默认 seeds 0..499、A* policy、`max_steps=300`、只保存前 20 条可视化且不保存 gif，完整数据进入 `outputs/kinder_motion2d_500eps/dataset_folder/`。
+- `scripts/eval/evaluate_kinder_motion2d_lewm.py`：KinDER Motion2D 的 LEWM eval 脚本，默认评测 held-out seeds `1000 1001 1002`。脚本先用 A* 收集 eval folder dataset 和 trajectory/gif artifacts，再加载 `lewm_kinder_motion2d_500eps` 的最新 `weights_epoch_*.pt`，计算 latent embedding MSE：teacher-forced one-step 和 autoregressive rollout 两条曲线。LEWM 没有 decoder，所以这是 representation-space dynamics metric，不是 pixel reconstruction metric。加 `--run-planning` 会进一步用 LEWM `get_cost` + CEM/PredictiveSampling 做 dataset-driven MPC：从 eval episode 的起点出发，以未来 `goal_offset` 的 state/image 为 goal，输出 `planning_metrics.json`，包含 success rate、per-episode success、final goal distance 和可选 planning videos。加 `--plot-oracle-cost` 会画 oracle/A* planner cost-to-go 曲线，默认 seeds 1000..1019 共 20 条，输出 `oracle_cost_curves.png/csv`；若指定 `--oracle-cost-goal-offset`，cost 目标就是该 offset 的中间 goal，否则在 planning 模式下跟随 `planning_goal_offset`，无 planning 时使用 episode 原始 target。
 - `scripts/train/config/data/kinder_motion2d.yaml`：LEWM 等训练脚本使用的 KinDER Motion2D 数据配置，默认 `frameskip=1`，加载 `pixels/action/proprio/state`。
 - `docs/`：MkDocs 文档和 API/教程页面。
 - `tests/`：单元测试，覆盖 world loop、policy、solver、dataset、format、wrapper、env pool 等。
@@ -213,6 +214,15 @@ KinDER 目前只做了 Motion2D 的轻量适配：
 - `unwrapped` 必须保持为 stable 适配器本身，供 `World.evaluate(..., callables=[_set_state, _set_goal_state])` 调到 wrapper 的 dataset-eval hooks；底层 KinDER env 通过 `kinder_env` 属性访问。
 - 数据采集 policy 的重点坑：Motion2D 机器人有 base + gripper/arm，单纯对 base center 做 grid A* 会在窄 passage 中失败，尤其随机初始 `theta` 会让 gripper 撞墙。当前 collect 脚本默认先从竖墙障碍中解析 passage center waypoints，再用 heading controller 让机器人先朝向运动方向；grid A* 只作为 fallback。seed 0..19、`max_steps=300` 的 smoke benchmark 为 20/20 success。
 
+KinDER ClutteredStorage2D 的轻量适配：
+
+- 注册 id：`swm/KinderClutteredStorage2D-v0`，以及官方 block variants `swm/KinderClutteredStorage2D-b1-v0`、`b3`、`b7`、`b15`；默认采集和训练先以 `b1` 为准。
+- 适配类：`stable_worldmodel.envs.kinder.cluttered_storage2d:KinderClutteredStorage2D`。observation 保持 KinDER full vector；`info['state']` 等于完整 observation；`proprio/goal_proprio` 是 robot 的 `(x, y, theta, arm_joint, vacuum)`；`goal_state` 是 full-vector shelf storage goal。
+- 采集脚本：`scripts/data/collect_kinder_cluttered_storage2d.py`，默认 `--num-blocks 1`、`--policy scripted`、`--max-steps 400`，写出 Motion2D 同款 stable folder dataset，并可保存 `episode.npz`、`trajectory.png`、`episode.gif`、`metadata.json`。500 条数据便捷脚本是 `scripts/data/collect_kinder_cluttered_storage2d_500.sh`，默认 seeds 0..499，输出到 `outputs/kinder_cluttered_storage2d_b1_500eps/dataset_folder/`。
+- Scripted expert 只承诺 b1：先 motion plan 到 block 自身长边面的 pregrasp pose，arm retracted；再沿该面法线伸出吸盘并开 vacuum；随后带物体 motion plan 到 shelf 开口下方的 vertical preinsert pose；最后保持 robot heading 向上，用 `darm` 竖直插入 shelf。失败时不 teleport，metadata 记录 failure reason。
+- 几何注意：KinDER rectangle 的 `x/y/theta` 是局部左下角 pose，不是中心点。做 grasp/insert 候选时需要用 local axes 或从目标中心反推出 lower-left pose，否则 `is_inside_shelf` 会误判。
+- smoke 验收：2026-05-27 本地跑 `seeds 0..9`、b1 scripted、`max_steps=400` 为 10/10 success；单 seed 会保存 gif，例如 `outputs/kinder_cluttered_storage2d_b1_policy_check/episode.gif`。
+
 `MegaWrapper` 组合顺序：
 
 1. 可选 `AddPixelsWrapper`：从 `render()` 或 `render_multiview()` 取图，resize 后写入 `info['pixels']` 或 `info['pixels.<view>']`。
@@ -256,6 +266,7 @@ LEWM 训练 KinDER Motion2D 的最小稳定命令建议：
 - 如果 home 目录或默认 cache 不可写，设置 `STABLEWM_HOME=outputs/stablewm_cache` 和 `SPT_CACHE_DIR=outputs/spt_cache`。
 - `SIGReg` 必须跟随输入 tensor 的 device/dtype 创建随机投影，不能硬编码 `device='cuda'`，否则 CPU 训练会失败。
 - `scripts/train/lewm.py` 支持 `resume_ckpt_path=<abs path>` 和 `resume_weights_only=false`。用 stable-pretraining 的 `outputs/spt_cache/runs/.../checkpoints/last.ckpt` 恢复时要 `resume_weights_only=false`，这样 epoch、optimizer、scheduler 一起恢复；默认的权重文件 fallback 仍按 weights-only 加载。
+- 2026-05-27 的 KinDER Motion2D 500eps 训练 run `outputs/spt_cache/runs/20260527/043013/c227d49c3fc9/metrics.csv`：训练中断在 epoch 19，验证只到 epoch 18。`validate/loss_epoch` 从 0.2235 降到 epoch 16 的最低 0.1253，epoch 18 为 0.1290；`validate/pred_loss_epoch` 继续降到 epoch 18 的 0.00126；`validate/sigreg_loss_epoch` 在 epoch 16 最低 1.3785 后轻微回升到 1.4198。判断：prediction loss 基本收敛，总 loss 已进入平台期，继续训练收益可能有限；现有 checkpoint 只有 `epoch=18-step=41249.ckpt` 和 `last.ckpt`。
 
 ## CLI
 

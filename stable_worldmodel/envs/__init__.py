@@ -133,6 +133,18 @@ for _num_passages in range(6):
         kwargs={'num_passages': _num_passages},
     )
 
+register(
+    id='swm/KinderClutteredStorage2D-v0',
+    entry_point='stable_worldmodel.envs.kinder.cluttered_storage2d:KinderClutteredStorage2D',
+)
+
+for _num_blocks in (1, 3, 7, 15):
+    register(
+        id=f'swm/KinderClutteredStorage2D-b{_num_blocks}-v0',
+        entry_point='stable_worldmodel.envs.kinder.cluttered_storage2d:KinderClutteredStorage2D',
+        kwargs={'num_blocks': _num_blocks},
+    )
+
 _GYM_CONTROL = 'stable_worldmodel.envs.gymnasium_control'
 register(
     id='swm/CartPoleControl-v1',
